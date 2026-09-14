@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "worldId": "knowledge-city",
+  "renderMode": "procedural-svg",
+  "palette": {
+    "sky": "#c6d3ff",
+    "glass": "#5149db",
+    "challenge": "#1599b1",
+    "mastery": "#e76778",
+    "success": "#14a98b",
+    "construction": "#f0ae3d"
+  },
+  "buildings": [
+    {
+      "id": "russian-skyscraper",
+      "topicId": "unstressed-vowels",
+      "title": "Небоскрёб слов",
+      "status": "active",
+      "scene": "inline-svg",
+      "assetContract": "building-front-v1",
+      "background": "world/city-background-plaza-v1.jpg",
+      "streetBackground": "world/city-districts-panorama-v1.jpg",
+      "foundation": "world/russian/foundation-v1.png",
+      "floorModules": ["standard", "x2-balcony", "x3-terrace"],
+      "sprites": {
+        "standard": "world/russian/floor-standard-v2.png",
+        "x2": "world/russian/floor-x2-v2.png",
+        "x3": "world/russian/floor-x3-v2.png"
+      },
+      "fallback": "inline-svg"
+    },
+    {
+      "id": "mathematics-space-station",
+      "topicId": "mathematics",
+      "title": "Космическая станция",
+      "status": "coming-soon",
+      "scene": "placeholder",
+      "assetContract": "building-front-v1"
+    },
+    {
+      "id": "english-word-island",
+      "topicId": "english",
+      "title": "Остров слов",
+      "status": "coming-soon",
+      "scene": "placeholder",
+      "assetContract": "building-front-v1"
+    }
+  ]
+}

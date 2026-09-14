@@ -1,0 +1,13 @@
+{
+  "name": "Планета 5+ — Строй. Играй. Учись.",
+  "short_name": "Планета 5+",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f8ff",
+  "theme_color": "#f6f8ff",
+  "lang": "ru",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
