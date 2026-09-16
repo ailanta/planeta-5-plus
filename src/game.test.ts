@@ -5,7 +5,7 @@ import { initialProgress } from './types'
 import { migrateProgress } from './storage'
 
 const x1 = exercises.find((exercise) => exercise.id === 'grass-x1')!
-const x2 = exercises.find((exercise) => exercise.id === 'grass-x2')!
+const x2 = exercises.find((exercise) => exercise.id === 'lick-x2')!
 
 describe('exercise evaluation', () => {
   it('includes the confusable pair and correct answer for every warmup', () => {
@@ -19,7 +19,7 @@ describe('exercise evaluation', () => {
   })
 
   it('accepts the ×2 context correction without requiring a check word', () => {
-    expect(answerIsCorrect(x2, 'трава', '', 'трова')).toBe(true)
+    expect(answerIsCorrect(x2, 'зализать', '', 'залезать')).toBe(true)
   })
   it('ships a balanced starter set', () => {
     const familyCount = exercises.filter((exercise) => exercise.level === 1).length
@@ -45,9 +45,9 @@ describe('exercise evaluation', () => {
   })
 
   it('requires the misspelled word and its correction on level two', () => {
-    expect(answerIsCorrect(x2, 'трава', '', 'трова')).toBe(true)
-    expect(answerIsCorrect(x2, 'трава', '', '')).toBe(false)
-    expect(answerIsCorrect(x2, 'трова', '', 'трова')).toBe(false)
+    expect(answerIsCorrect(x2, 'зализать', '', 'залезать')).toBe(true)
+    expect(answerIsCorrect(x2, 'зализать', '', '')).toBe(false)
+    expect(answerIsCorrect(x2, 'залезать', '', 'залезать')).toBe(false)
   })
 
   it('rejects selecting the wrong word in the context', () => {
