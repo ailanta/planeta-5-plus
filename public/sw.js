@@ -1,5 +1,7 @@
 // Меняйте версию при выпуске новой оболочки: старый кэш удалится при активации.
-const CACHE = 'planeta-5plus-shell-v10'
+// Версия меняется при выпуске новой оболочки, чтобы старые хэши Vite
+// не оставались в кэше после деплоя на GitHub Pages.
+const CACHE = 'planeta-5plus-shell-v11'
 const CORE = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './assets/world/manifest.json',
@@ -34,6 +36,24 @@ self.addEventListener('fetch', (event) => {
       (requestUrl.pathname.startsWith('/src/') ||
        requestUrl.pathname.startsWith('/@vite/') ||
        requestUrl.pathname.startsWith('/node_modules/.vite/'))) return
+
+  // HTML и хэшированные Vite-ресурсы должны обновляться сразу после деплоя.
+  // При отсутствии сети используем последнюю рабочую копию из кэша.
+  const isShellOrAsset = requestUrl.origin === self.location.origin &&
+    (event.request.mode === 'navigate' ||
+      requestUrl.pathname.endsWith('.html') ||
+      requestUrl.pathname.includes('/assets/'))
+  if (isShellOrAsset) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        const copy = response.clone()
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy))
+        return response
+      }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html'))),
+    )
+    return
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
       const copy = response.clone()
