@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { exercises, totalFloorCapacity } from './content'
+import { englishCapacity, englishExercisesFor, englishTopics, type EnglishTopicId } from './englishContent'
 import { answerIsCorrect, applyAttempt, chooseExercise, createAttempt, floorRewardForAttempt, repairExerciseIds, topicMastery, letterChoices } from './game'
 import { clearProgress, loadProgress, migrateProgress, requestPersistentStorage, saveProgress } from './storage'
 import { initialProgress, type BuildingModule, type Exercise, type Progress } from './types'
 import { floorSlotsFromModules, layoutBuilding, stageForProgress } from './world'
 
-type Screen = 'home' | 'play' | 'summary' | 'parent'
+type Screen = 'home' | 'english-home' | 'play' | 'summary' | 'parent'
+type GameMode = 'russian' | 'english'
 type Feedback = 'correct' | 'repair' | 'revealed' | null
 const WORLD_ASSET_BASE = `${import.meta.env.BASE_URL}assets/world/russian/`
 const WORLD_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/world/`
@@ -15,6 +17,14 @@ const WORLD_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/world/`
 const CITY_BACKGROUND = WORLD_ASSET_ROOT + 'city-background-plaza-v1.jpg'
 const CITY_STREET_BACKGROUND = WORLD_ASSET_ROOT + 'city-street-continuous-v2.png'
 const FOUNDATION_ASSET = WORLD_ASSET_ROOT + 'russian/foundation-v1.png'
+const MALL_BACKGROUND = WORLD_ASSET_ROOT + 'english/mall-panorama-v1.png'
+
+function freshEnglishProgress(): Record<EnglishTopicId, Progress> {
+  return Object.fromEntries(englishTopics.map((topic) => [
+    topic.id,
+    { ...initialProgress, targetFloors: englishCapacity(topic.id) },
+  ])) as Record<EnglishTopicId, Progress>
+}
 
 function floorLabel(count: number): string {
   const mod10 = count % 10
@@ -24,9 +34,39 @@ function floorLabel(count: number): string {
   return 'этажей'
 }
 
+function productLabel(count: number): string {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return 'товар'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'товара'
+  return 'товаров'
+}
+
+function shuffleChoices(values: string[], seed: string, correctAnswer?: string): string[] {
+  const result = [...values]
+  let hash = 2166136261
+  for (const character of seed) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    hash = Math.imul(hash ^ (hash >>> 13), 1274126177)
+    const swapIndex = Math.abs(hash) % (index + 1)
+    ;[result[index], result[swapIndex]] = [result[swapIndex], result[index]]
+  }
+  // The source content keeps the correct answer first for readability. In the
+  // game it should never look like the default choice, so move it when the
+  // deterministic shuffle happens to leave it in position zero.
+  if (correctAnswer && result.length > 1 && result[0] === correctAnswer) {
+    const target = 1 + Math.abs(hash) % (result.length - 1)
+    ;[result[0], result[target]] = [result[target], result[0]]
+  }
+  return result
+}
+
 function App() {
   const [progress, setProgress] = useState<Progress>({ ...initialProgress, targetFloors: totalFloorCapacity })
+  const [englishProgress, setEnglishProgress] = useState<Record<EnglishTopicId, Progress>>(freshEnglishProgress)
   const [screen, setScreen] = useState<Screen>('home')
+  const [gameMode, setGameMode] = useState<GameMode>('russian')
+  const [activeEnglishTopic, setActiveEnglishTopic] = useState<EnglishTopicId>('english-clothes')
   const [loading, setLoading] = useState(true)
   const [exercise, setExercise] = useState<Exercise | null>(null)
   const [sessionId, setSessionId] = useState('')
@@ -43,10 +83,21 @@ function App() {
   const [lastRepair, setLastRepair] = useState(false)
   const progressRef = useRef(progress)
   const sessionExerciseIdsRef = useRef<string[]>([])
+  const exercisePoolRef = useRef<Exercise[]>(exercises)
+  const topicIdRef = useRef('unstressed-vowels')
 
   useEffect(() => {
-    loadProgress().then((stored) => {
+    Promise.all([
+      loadProgress(),
+      ...englishTopics.map((topic) => loadProgress(topic.id, englishExercisesFor(topic.id), englishCapacity(topic.id))),
+    ]).then(([stored, ...storedEnglish]) => {
       if (stored) setProgress(stored)
+      const fresh = freshEnglishProgress()
+      const next = englishTopics.reduce((result, topic, index) => ({
+        ...result,
+        [topic.id]: storedEnglish[index] ?? fresh[topic.id],
+      }), {} as Record<EnglishTopicId, Progress>)
+      setEnglishProgress(next)
       setLoading(false)
       requestPersistentStorage()
     })
@@ -57,26 +108,55 @@ function App() {
   }, [progress, loading])
 
   useEffect(() => {
-    progressRef.current = progress
-  }, [progress])
+    if (loading) return
+    void Promise.all(englishTopics.map((topic) => saveProgress(englishProgress[topic.id], topic.id)))
+  }, [englishProgress, loading])
 
-  const mastered = useMemo(() => topicMastery(progress), [progress])
-  const repairCount = repairExerciseIds(progress).length
-  const sessionFloors = Math.max(0, progress.floors - sessionStartFloors)
+  const activeProgress = gameMode === 'english' ? englishProgress[activeEnglishTopic] : progress
 
-  function beginSession() {
+  useEffect(() => {
+    progressRef.current = activeProgress
+  }, [activeProgress])
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [screen])
+
+  const mastered = useMemo(() => topicMastery(activeProgress), [activeProgress])
+  const russianMastered = useMemo(() => topicMastery(progress), [progress])
+  const activePool = gameMode === 'english' ? englishExercisesFor(activeEnglishTopic) : exercises
+  const repairCount = repairExerciseIds(activeProgress, activePool).length
+  const russianRepairCount = repairExerciseIds(progress, exercises).length
+  const sessionFloors = Math.max(0, activeProgress.floors - sessionStartFloors)
+
+  function startSession(current: Progress, pool: Exercise[], topicId: string) {
     const id = crypto.randomUUID?.() ?? String(Date.now())
+    exercisePoolRef.current = pool
+    topicIdRef.current = topicId
+    progressRef.current = current
     setSessionId(id)
     setSessionCount(0)
     setSessionExerciseIds([])
     sessionExerciseIdsRef.current = []
-    setSessionStartFloors(progress.floors)
+    setSessionStartFloors(current.floors)
     setScreen('play')
-    loadNext(progressRef.current, [], id)
+    loadNext(current, [], id)
+  }
+
+  function beginRussianSession() {
+    setGameMode('russian')
+    startSession(progress, exercises, 'unstressed-vowels')
+  }
+
+  function beginEnglishSession(topicId: EnglishTopicId) {
+    const pool = englishExercisesFor(topicId)
+    setGameMode('english')
+    setActiveEnglishTopic(topicId)
+    startSession(englishProgress[topicId], pool, topicId)
   }
 
   function loadNext(current: Progress, excluded: string[], id = sessionId) {
-    const next = chooseExercise(current, Date.now(), excluded)
+    const next = chooseExercise(current, Date.now(), excluded, exercisePoolRef.current, topicIdRef.current)
     setExercise(next)
     sessionExerciseIdsRef.current = [...excluded, next.id]
     setSessionExerciseIds(sessionExerciseIdsRef.current)
@@ -88,19 +168,26 @@ function App() {
     setHintIndex(-1)
     setFirstSubmitted(false)
     setConfidence(null)
-    setLastRepair(repairExerciseIds(current).includes(next.id))
+    setLastRepair(repairExerciseIds(current, exercisePoolRef.current).includes(next.id))
     if (!id) setSessionId(crypto.randomUUID?.() ?? String(Date.now()))
   }
 
   function commitAttempt(finalCorrect: boolean, initiallyCorrect: boolean) {
     if (!exercise) return
     const attempt = createAttempt(exercise, sessionId, initiallyCorrect, finalCorrect, hintsUsed, confidence)
-    setProgress((current) => {
-      const updated = applyAttempt(current, attempt)
+    const update = (current: Progress) => {
+      const updated = applyAttempt(current, attempt, exercisePoolRef.current)
       const reward = floorRewardForAttempt(current, attempt)
       if (reward > 0) updated.floors = Math.min(updated.targetFloors, updated.floors + reward)
+      progressRef.current = updated
       return updated
-    })
+    }
+    if (exercise.topicId.startsWith('english-')) {
+      const topicId = exercise.topicId as EnglishTopicId
+      setEnglishProgress((current) => ({ ...current, [topicId]: update(current[topicId]) }))
+    } else {
+      setProgress(update)
+    }
   }
 
   function submit() {
@@ -145,16 +232,25 @@ function App() {
   }
 
   function finishSession() {
-    setProgress((current) => ({ ...current, sessionsCompleted: current.sessionsCompleted + 1 }))
+    if (gameMode === 'english') {
+      setEnglishProgress((current) => ({
+        ...current,
+        [activeEnglishTopic]: { ...current[activeEnglishTopic], sessionsCompleted: current[activeEnglishTopic].sessionsCompleted + 1 },
+      }))
+    } else {
+      setProgress((current) => ({ ...current, sessionsCompleted: current.sessionsCompleted + 1 }))
+    }
     setScreen('summary')
   }
 
   async function resetAll() {
-    await clearProgress()
+    await Promise.all([clearProgress(), ...englishTopics.map((topic) => clearProgress(topic.id))])
     const fresh = { ...initialProgress, targetFloors: totalFloorCapacity }
+    const freshEnglish = freshEnglishProgress()
     progressRef.current = fresh
     sessionExerciseIdsRef.current = []
     setProgress(fresh)
+    setEnglishProgress(freshEnglish)
     setScreen('home')
   }
 
@@ -203,9 +299,10 @@ function App() {
         <button className="brand-button" onClick={() => setScreen('home')} aria-label="Планета 5+ — на главную"><span className="brand-mark" aria-hidden="true">+</span><span>ПЛАНЕТА <b className="brand-grade">5+</b></span></button>
         <button className="parent-link" onClick={() => setScreen('parent')}>Взрослым</button>
       </header>
-      {screen === 'home' && <Home progress={progress} repairCount={repairCount} mastered={mastered} onStart={beginSession} />}
-      {screen === 'play' && exercise && <Play exercise={exercise} progress={progress} sessionCount={sessionCount} sessionFloors={sessionFloors} lastRepair={lastRepair} word={word} selectedErrorWord={selectedErrorWord} feedback={feedback} hintIndex={hintIndex} confidence={confidence} onWordChange={setWord} onSelectedErrorWord={setSelectedErrorWord} onNeedHint={requestHint} onSubmit={submit} onReveal={revealAndContinue} onNext={nextExercise} onFinish={finishSession} />}
-      {screen === 'summary' && <Summary progress={progress} sessionFloors={sessionFloors} mastered={mastered} onAgain={beginSession} onHome={() => setScreen('home')} />}
+      {screen === 'home' && <Home progress={progress} repairCount={russianRepairCount} mastered={russianMastered} onStart={beginRussianSession} onOpenEnglish={() => setScreen('english-home')} />}
+      {screen === 'english-home' && <EnglishHome progress={englishProgress} onBack={() => setScreen('home')} onStart={beginEnglishSession} />}
+      {screen === 'play' && exercise && <Play mode={gameMode} exercise={exercise} progress={activeProgress} sessionCount={sessionCount} sessionFloors={sessionFloors} lastRepair={lastRepair} word={word} selectedErrorWord={selectedErrorWord} feedback={feedback} hintIndex={hintIndex} confidence={confidence} onWordChange={setWord} onSelectedErrorWord={setSelectedErrorWord} onNeedHint={requestHint} onSubmit={submit} onReveal={revealAndContinue} onNext={nextExercise} onFinish={finishSession} />}
+      {screen === 'summary' && <Summary mode={gameMode} topicId={gameMode === 'english' ? activeEnglishTopic : undefined} progress={activeProgress} sessionFloors={sessionFloors} mastered={mastered} onAgain={() => gameMode === 'english' ? beginEnglishSession(activeEnglishTopic) : beginRussianSession()} onHome={() => setScreen(gameMode === 'english' ? 'english-home' : 'home')} />}
       {screen === 'parent' && <Parent progress={progress} onBack={() => setScreen('home')} onReset={resetAll} onExport={exportProgress} onImport={importProgress} />}
     </div>
   )
@@ -413,7 +510,7 @@ function CityStreet({ progress, repairCount }: { progress: Progress; repairCount
   function moveStreet(direction: number) {
     const viewport = streetRef.current
     if (!viewport) return
-    viewport.scrollTo({ left: Math.max(0, Math.min(2, page + direction)) * viewport.clientWidth, behavior: 'smooth' })
+    viewport.scrollBy({ left: direction * viewport.clientWidth, behavior: 'smooth' })
   }
 
   return (
@@ -450,19 +547,103 @@ function StreetFutureBuilding({ title }: { title: string }) {
   </article>
 }
 
-function Home({ progress, repairCount, mastered, onStart }: { progress: Progress; repairCount: number; mastered: boolean; onStart: () => void }) {
+function Home({ progress, repairCount, mastered, onStart, onOpenEnglish }: { progress: Progress; repairCount: number; mastered: boolean; onStart: () => void; onOpenEnglish: () => void }) {
   return (
     <main className="screen home-screen">
       <section className="hero planet-hero" style={{ backgroundImage: `linear-gradient(90deg, #101c50ed, #2536728a), url(${CITY_BACKGROUND})` }}><p className="eyebrow">ТВОЯ ПЛАНЕТА ВОЗМОЖНОСТЕЙ</p><h1>Строй. Играй.<br /><em>Учись.</em></h1><p className="hero-copy">Строй свой город.<br />Улучшай знания.</p><span className="hero-orbit" aria-hidden="true">5<span>+</span></span></section>
       <CityStreet progress={progress} repairCount={repairCount} />
       <section className="topic-card"><div><span className="topic-icon">А</span><div><strong>Проверяемые гласные</strong><small>Русский язык · 5–8 минут</small></div></div><span className={'status-pill ' + (mastered ? 'done' : '')}>{mastered ? 'Освоено' : repairCount ? repairCount + ' в ремонте' : 'В работе'}</span></section>
       <button className="primary-button start-button" onClick={onStart}>{repairCount ? 'Начать ремонт' : mastered ? 'Потренироваться ещё' : progress.floors ? 'Продолжить стройку' : 'Начать игру'} <span>→</span></button>
-      <section className="district-preview" aria-label="Будущие районы"><p className="eyebrow">ДАЛЬШЕ — БОЛЬШЕ</p><h2>Новые районы</h2><p>Другой пейзаж. Новые здания. Ещё больше открытий.</p><div className="district-preview-grid"><article><span aria-hidden="true">∑</span><strong>Математика</strong><small>Научная набережная · скоро</small></article><article><span aria-hidden="true">✳</span><strong>Окружающий мир</strong><small>Зелёный квартал · скоро</small></article></div></section>
+      <section className="district-preview" aria-label="Районы знаний"><p className="eyebrow">ДАЛЬШЕ — БОЛЬШЕ</p><h2>Новые районы</h2><p>Другой пейзаж. Новая коллекция. Та же понятная механика.</p><div className="district-preview-grid"><button className="district-card english" type="button" onClick={onOpenEnglish}><span aria-hidden="true">EN</span><strong>English</strong><small>Shopping Mall · открыт</small></button><article><span aria-hidden="true">∑</span><strong>Математика</strong><small>Научная набережная · скоро</small></article></div></section>
     </main>
   )
 }
 
+function ProductIcon({ kind, emoji }: { kind?: string; emoji: string }) {
+  const common = { viewBox: '0 0 24 24', role: 'presentation' as const, focusable: false as const }
+  if (kind === 'tshirt') return <svg {...common}><path d="M8 3 4 5 2 10l4 2v9h12v-9l4-2-2-5-4-2c-.5 1.7-1.8 2.5-4 2.5S8.5 4.7 8 3Z" /></svg>
+  if (kind === 'skirt') return <svg {...common}><path d="M8 3h8l3.2 18H4.8L8 3Z" /><path className="detail" d="M7.5 8h9M10 8 8.5 20M14 8l1.5 12" /></svg>
+  if (kind === 'jeans') return <svg {...common}><path d="M7 2h10l1 20h-5l-1-12-1 12H6L7 2Z" /><path className="detail" d="M7 7h10M12 2v8" /></svg>
+  if (kind === 'dress') return <svg {...common}><path d="M9 2h6l1 6 4 13H4L8 8l1-6Z" /><path className="detail" d="M8 8h8M10 2c0 2.5 4 2.5 4 0" /></svg>
+  if (kind === 'coat' || kind === 'jacket') return <svg {...common}><path d="m8 3-4 3-2 8 4 1v7h12v-7l4-1-2-8-4-3c-.8 1.3-2.1 2-4 2s-3.2-.7-4-2Z" /><path className="detail" d="M12 5v17M7 13h3M14 13h3" /></svg>
+  if (kind === 'sweater') return <svg {...common}><path d="m8 3-5 3-2 8 4 1 1-4v11h12V11l1 4 4-1-2-8-5-3c-.6 1.5-1.9 2.2-4 2.2S8.6 4.5 8 3Z" /><path className="detail" d="M7 10h10M7 16h10M10 3c.3 2.2 3.7 2.2 4 0" /></svg>
+  if (kind === 'hat') return <svg {...common}><path d="M7 15c.7-7 2.2-11 5-11s4.3 4 5 11H7Z" /><path d="M3 15h18c1.1 0 2 .9 2 2s-.9 2-2 2H3c-1.1 0-2-.9-2-2s.9-2 2-2Z" /></svg>
+  if (kind === 'trainers') return <svg {...common}><path d="M4 6h6c1.5 4.8 4.6 7.4 9.5 8 1.7.2 2.5 1.3 2.5 3v2H3c-1.2 0-2-.8-2-2 0-2 1.1-4 3-6V6Z" /><path className="detail" d="M3 15h18M9 9l-3 2m5 0-3 2" /></svg>
+  if (kind === 'boots') return <svg {...common}><path d="M5 2h9v11c1.5 1.7 3.5 2.7 6 3 1.3.2 2 .9 2 2v3H4c-1.3 0-2-.7-2-2v-3l3-4V2Z" /><path className="detail" d="M5 12h9M4 17h17" /></svg>
+  if (kind === 'socks') return <svg {...common}><path d="M7 2h8v11l-4 7c-.8 1.4-2.8 2.1-4.2 1.3l-2.4-1.4c-1.4-.8-1.8-2.6-.8-3.9L7 12V2Z" /><path className="detail" d="M7 7h8M5 15l6 4" /></svg>
+  return <span className="product-emoji">{emoji}</span>
+}
+
+function BasketStack({ progress, topicId, immersive = false }: { progress: Progress; topicId: EnglishTopicId; immersive?: boolean }) {
+  const pool = englishExercisesFor(topicId)
+  const items = progress.modules.flatMap((module) => {
+    const exercise = pool.find((candidate) => candidate.id === module.exerciseId)
+    const reward = exercise?.rewardItem ?? { emoji: '🛍️', label: 'new item', color: '#8873f5' }
+    return Array.from({ length: module.units }, (_, unit) => ({
+      id: `${module.id}-${unit}`,
+      ...reward,
+      damaged: module.status === 'repair',
+      level: module.level,
+    }))
+  }).slice(0, progress.targetFloors)
+  return <section className={'basket-scene ' + (immersive ? 'immersive' : '')} style={{ backgroundImage: `linear-gradient(180deg, #17205238, #17205288), url(${MALL_BACKGROUND})` }} aria-label={`Корзина: ${progress.floors} из ${progress.targetFloors} товаров`}>
+    <div className="mall-light" aria-hidden="true" />
+    <div className="basket-stack" aria-hidden="true">
+      <div className="basket-items">{items.map((item, index) => <span key={item.id} className={'basket-item ' + (item.damaged ? 'damaged ' : '') + (item.level === 2 ? 'challenge' : '')} style={{ '--item-color': item.color, '--item-index': index } as CSSProperties} title={item.label}><b><ProductIcon kind={item.kind} emoji={item.emoji} /></b>{item.level === 2 && <i>×2</i>}</span>)}</div>
+      {!items.length && <div className="basket-empty"><span>＋</span><small>Первый товар<br />ждёт тебя</small></div>}
+      <div className="basket-handle" />
+      <div className="basket-body"><span /><span /><span /><span /></div>
+      <div className="basket-wheels"><i /><i /></div>
+    </div>
+    {!immersive && <div className="basket-caption"><strong>{progress.floors} / {progress.targetFloors}</strong><span>{repairExerciseIds(progress, pool).length ? 'Есть товары для проверки' : 'товаров собрано'}</span></div>}
+  </section>
+}
+
+function MallStreet({ progress, onStart }: { progress: Record<EnglishTopicId, Progress>; onStart: (topicId: EnglishTopicId) => void }) {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [page, setPage] = useState(0)
+  function move(direction: number) {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const nextPage = Math.max(0, Math.min(englishTopics.length - 1, page + direction))
+    setPage(nextPage)
+    const targetLeft = nextPage === englishTopics.length - 1
+      ? viewport.scrollWidth - viewport.clientWidth
+      : nextPage * viewport.clientWidth
+    viewport.scrollTo({ left: targetLeft, behavior: 'smooth' })
+  }
+  return <section className="mall-street" aria-label="Бутики English">
+    <div className="mall-heading"><span><strong>Shopping Mall</strong><small>Выбери бутик и собери корзину</small></span><span className="mall-count">{englishTopics.length} бутика открыты</span></div>
+    <div ref={viewportRef} className="mall-viewport" onScroll={(event) => setPage(Math.round(event.currentTarget.scrollLeft / event.currentTarget.clientWidth))}>
+      <div className="mall-world" style={{ width: `${englishTopics.length * 100}%`, backgroundImage: `url(${MALL_BACKGROUND})` }}>
+        {englishTopics.map((topic) => {
+          const topicProgress = progress[topic.id]
+          const repairs = repairExerciseIds(topicProgress, englishExercisesFor(topic.id)).length
+          return <button key={topic.id} className="boutique-slot" type="button" onClick={() => onStart(topic.id)}>
+            <span className="boutique-sign" style={{ '--boutique-accent': topic.accent } as CSSProperties}><b>{topic.icon} {topic.title}</b><small>{topic.subtitle}</small></span>
+            <span className="boutique-progress"><b>{topicProgress.floors} / {topicProgress.targetFloors}</b><small>{repairs ? `${repairs} на проверке` : 'товаров в корзине'}</small></span>
+          </button>
+        })}
+      </div>
+    </div>
+    <div className="street-navigation mall-navigation"><button type="button" disabled={page === 0} onClick={() => move(-1)}>←</button><span>{page + 1} / {englishTopics.length} · Листай галерею</span><button type="button" disabled={page === englishTopics.length - 1} onClick={() => move(1)}>→</button></div>
+  </section>
+}
+
+function EnglishHome({ progress, onBack, onStart }: { progress: Record<EnglishTopicId, Progress>; onBack: () => void; onStart: (topicId: EnglishTopicId) => void }) {
+  const collected = Object.values(progress).reduce((sum, item) => sum + item.floors, 0)
+  return <main className="screen english-home">
+    <button className="back-link" type="button" onClick={onBack}>← На главную</button>
+    <section className="english-hero" style={{ backgroundImage: `linear-gradient(100deg, #151b53eb, #5e3e8088), url(${MALL_BACKGROUND})` }}><p className="eyebrow">ENGLISH DISTRICT</p><h1>Shop.<br /><em>Speak.</em></h1><p>Выбирай слова и фразы — каждый верный ответ добавляет товар в корзину.</p><span>{collected} {productLabel(collected)}</span></section>
+    <MallStreet progress={progress} onStart={onStart} />
+    <section className="english-method"><strong>Как играем</strong><div><span><b>4</b> быстрых перевода</span><span><b>1</b> предложение ×2</span><span><b>↺</b> трудные товары вернутся</span></div></section>
+  </main>
+}
+
 function Prompt({ exercise }: { exercise: Exercise }) {
+  if (exercise.taskType === 'translation-choice' || exercise.taskType === 'sentence-choice') {
+    return <span className="translation-prompt" lang="ru">{exercise.prompt}</span>
+  }
   if (exercise.level !== 1) return <>{exercise.prompt}</>
   // Инструкция уже показана отдельной строкой выше. В карточке оставляем
   // только само слово, чтобы длинный текст не раздвигал части вокруг пропуска.
@@ -479,8 +660,9 @@ function SentenceWords({ exercise, selected, onSelect }: { exercise: Exercise; s
   })}</p>
 }
 
-function Play(props: { exercise: Exercise; progress: Progress; sessionCount: number; sessionFloors: number; lastRepair: boolean; word: string; selectedErrorWord: string; feedback: Feedback; hintIndex: number; confidence: 'sure' | 'unsure' | null; onWordChange: (value: string) => void; onSelectedErrorWord: (value: string) => void; onNeedHint: () => void; onSubmit: () => void; onReveal: () => void; onNext: () => void; onFinish: () => void }) {
-  const { exercise, progress, sessionCount, sessionFloors, lastRepair, word, selectedErrorWord, feedback, hintIndex } = props
+function Play(props: { mode: GameMode; exercise: Exercise; progress: Progress; sessionCount: number; sessionFloors: number; lastRepair: boolean; word: string; selectedErrorWord: string; feedback: Feedback; hintIndex: number; confidence: 'sure' | 'unsure' | null; onWordChange: (value: string) => void; onSelectedErrorWord: (value: string) => void; onNeedHint: () => void; onSubmit: () => void; onReveal: () => void; onNext: () => void; onFinish: () => void }) {
+  const { mode, exercise, progress, sessionCount, sessionFloors, lastRepair, word, selectedErrorWord, feedback, hintIndex } = props
+  const isEnglish = mode === 'english'
   const [viewingTower, setViewingTower] = useState(false)
   const exerciseCardRef = useRef<HTMLElement>(null)
   const [questionHeight, setQuestionHeight] = useState<number>()
@@ -497,33 +679,42 @@ function Play(props: { exercise: Exercise; progress: Progress; sessionCount: num
     return () => observer.disconnect()
   }, [exercise.id, feedback, viewingTower])
   useEffect(() => { setViewingTower(false) }, [exercise.id])
-  const letters = letterChoices(exercise.testedLetter)
-  const canSubmit = exercise.level === 1 ? Boolean(word) : Boolean(selectedErrorWord && word)
-  const instruction = exercise.level === 1 ? 'Вставь пропущенную букву' : selectedErrorWord ? 'Исправь найденное слово' : 'Нажми на слово с ошибкой'
+  const choices = useMemo(
+    () => shuffleChoices(
+      isEnglish ? exercise.choices ?? [] : letterChoices(exercise.testedLetter),
+      exercise.id,
+      isEnglish ? exercise.acceptedAnswers.word[0] : exercise.testedLetter,
+    ),
+    [exercise.id, exercise.testedLetter, exercise.choices, isEnglish],
+  )
+  const canSubmit = isEnglish ? Boolean(word) : exercise.level === 1 ? Boolean(word) : Boolean(selectedErrorWord && word)
+  const instruction = isEnglish
+    ? exercise.level === 1 ? 'Выбери перевод' : 'Выбери английское предложение'
+    : exercise.level === 1 ? 'Вставь пропущенную букву' : selectedErrorWord ? 'Исправь найденное слово' : 'Нажми на слово с ошибкой'
   return (
-    <main className="screen play-screen immersive-play">
-      <div className="play-world"><Tower floors={progress.floors} target={progress.targetFloors} damaged={lastRepair} modules={progress.modules} immersive /></div>
+    <main className={'screen play-screen immersive-play ' + (isEnglish ? 'english-play' : '')}>
+      <div className="play-world">{isEnglish ? <BasketStack progress={progress} topicId={exercise.topicId as EnglishTopicId} immersive /> : <Tower floors={progress.floors} target={progress.targetFloors} damaged={lastRepair} modules={progress.modules} immersive />}</div>
       <div className="play-overlay">
-        <div className="play-top"><button className="close-button" onClick={props.onFinish} aria-label="Закончить">×</button><div className="session-progress"><span style={{ width: Math.min(100, sessionCount * 10) + '%' }} /></div><span className="floor-counter">+{sessionFloors} {floorLabel(sessionFloors)}</span></div>
-        {lastRepair && <div className="repair-banner"><span aria-hidden="true">🔧</span><div><strong>Чиним знакомый этаж</strong><small>Вернёмся к слову, которое было трудным.</small></div></div>}
-        <button className="scene-toggle" type="button" aria-expanded={!viewingTower} aria-controls="active-exercise" onClick={() => setViewingTower((value) => !value)}>{viewingTower ? 'Вернуться к заданию' : 'Рассмотреть башню'} <span aria-hidden="true">{viewingTower ? '↩' : '⤢'}</span></button>
+        <div className="play-top"><button className="close-button" onClick={props.onFinish} aria-label="Закончить">×</button><div className="session-progress"><span style={{ width: Math.min(100, sessionCount * 10) + '%' }} /></div><span className="floor-counter">+{sessionFloors} {isEnglish ? productLabel(sessionFloors) : floorLabel(sessionFloors)}</span></div>
+        {lastRepair && <div className="repair-banner"><span aria-hidden="true">🔧</span><div><strong>{isEnglish ? 'Проверяем знакомый товар' : 'Чиним знакомый этаж'}</strong><small>{isEnglish ? 'Вернёмся к фразе, которая была трудной.' : 'Вернёмся к слову, которое было трудным.'}</small></div></div>}
+        <button className="scene-toggle" type="button" aria-expanded={!viewingTower} aria-controls="active-exercise" onClick={() => setViewingTower((value) => !value)}>{viewingTower ? 'Вернуться к заданию' : isEnglish ? 'Рассмотреть корзину' : 'Рассмотреть башню'} <span aria-hidden="true">{viewingTower ? '↩' : '⤢'}</span></button>
         <section ref={exerciseCardRef} id="active-exercise" hidden={viewingTower} style={{ minHeight: feedback ? questionHeight : undefined }} className={'exercise-card level-' + exercise.level + (feedback ? ' has-feedback feedback-state-' + feedback : '')}>
-        <div className="level-label">УРОВЕНЬ ×{exercise.level} <span>{exercise.level === 1 ? 'разминка' : 'найди ошибку'}</span></div>
-        {feedback === 'correct' && sessionCount > 0 && sessionCount % 10 === 0 && <p className="session-milestone">{sessionCount} заданий выполнено · +{sessionFloors} этажей. Можно продолжить или сделать перерыв кнопкой ×.</p>}
+        <div className="level-label">УРОВЕНЬ ×{exercise.level} <span>{exercise.level === 1 ? 'разминка' : isEnglish ? 'фраза в контексте' : 'найди ошибку'}</span></div>
+        {feedback === 'correct' && sessionCount > 0 && sessionCount % 10 === 0 && <p className="session-milestone">{sessionCount} заданий выполнено · +{sessionFloors} {isEnglish ? productLabel(sessionFloors) : floorLabel(sessionFloors)}. Можно продолжить или сделать перерыв кнопкой ×.</p>}
         {(feedback === 'correct' || feedback === 'revealed') && <h2 className="result-word">{exercise.targetWord}</h2>}
         <div className="exercise-inputs" hidden={feedback === 'correct' || feedback === 'revealed'}>
         <p className="task-instruction">{instruction}</p>
-        {exercise.level === 1 && <h2 className="word-display"><Prompt exercise={exercise} /></h2>}
-        {exercise.level === 2 && <SentenceWords exercise={exercise} selected={selectedErrorWord} onSelect={props.onSelectedErrorWord} />}
-        {exercise.level === 1 && <div className="choice-grid">{letters.map((letter) => <button key={letter} type="button" className={'choice ' + (word === letter ? 'selected' : '')} onClick={() => props.onWordChange(letter)}>{letter}</button>)}</div>}
-        {exercise.level === 2 && selectedErrorWord && <div className="answer-fields"><label>Исправленное слово<input value={word} onChange={(event) => props.onWordChange(event.target.value)} autoCapitalize="none" autoCorrect="off" /></label></div>}
+        {(exercise.level === 1 || isEnglish) && <h2 className={'word-display ' + (isEnglish ? 'english-question' : '')}><Prompt exercise={exercise} /></h2>}
+        {exercise.level === 2 && !isEnglish && <SentenceWords exercise={exercise} selected={selectedErrorWord} onSelect={props.onSelectedErrorWord} />}
+        {(exercise.level === 1 || isEnglish) && <div className={'choice-grid ' + (isEnglish ? 'english-choices' : '')}>{choices.map((choice) => <button key={choice} type="button" lang={isEnglish ? 'en' : undefined} className={'choice ' + (word === choice ? 'selected' : '')} onClick={() => props.onWordChange(choice)}>{choice}</button>)}</div>}
+        {exercise.level === 2 && !isEnglish && selectedErrorWord && <div className="answer-fields"><label>Исправленное слово<input value={word} onChange={(event) => props.onWordChange(event.target.value)} autoCapitalize="none" autoCorrect="off" /></label></div>}
         <div className="hint-row"><button type="button" className="hint-button" onClick={props.onNeedHint}>💡 Нужна подсказка</button>{hintIndex >= 0 && !feedback && <span>Подсказка {hintIndex + 1} из {exercise.hintSteps.length}: {exercise.hintSteps[hintIndex]}</span>}</div>
         </div>
         <div aria-live="polite">
-          {feedback && <div className={'feedback ' + (feedback === 'correct' ? 'feedback-good' : 'feedback-help')}><div className="feedback-title">{feedback === 'correct' ? 'Отлично, этаж построен!' : feedback === 'revealed' ? 'Вот как проверить' : 'Почти — давай починим этаж'}</div><p>{exercise.explanation}</p>{hintIndex >= 0 && feedback !== 'correct' && <p className="hint">Подсказка: {exercise.hintSteps[hintIndex]}</p>}{feedback === 'repair' && <button className="text-button" onClick={props.onReveal}>Показать способ проверки</button>}{feedback === 'revealed' && <button className="text-button" onClick={props.onReveal}>Понятно, восстановить этаж</button>}</div>}
+          {feedback && <div className={'feedback ' + (feedback === 'correct' ? 'feedback-good' : 'feedback-help')}><div className="feedback-title">{feedback === 'correct' ? isEnglish ? 'Отлично, товар в корзине!' : 'Отлично, этаж построен!' : feedback === 'revealed' ? 'Вот как запомнить' : isEnglish ? 'Почти — проверим товар' : 'Почти — давай починим этаж'}</div><p>{exercise.explanation}</p>{hintIndex >= 0 && feedback !== 'correct' && <p className="hint">Подсказка: {exercise.hintSteps[hintIndex]}</p>}{feedback === 'repair' && <button className="text-button" onClick={props.onReveal}>Показать подсказку</button>}{feedback === 'revealed' && <button className="text-button" onClick={props.onReveal}>{isEnglish ? 'Понятно, добавить товар' : 'Понятно, восстановить этаж'}</button>}</div>}
         </div>
         {!feedback && <button className="primary-button answer-button" disabled={!canSubmit} onClick={props.onSubmit}>Проверить ответ <span>✓</span></button>}
-        {!feedback && exercise.level === 2 && !selectedErrorWord && <p className="select-error-note">Сначала выбери слово — потом появится поле для исправления.</p>}
+        {!feedback && exercise.level === 2 && !isEnglish && !selectedErrorWord && <p className="select-error-note">Сначала выбери слово — потом появится поле для исправления.</p>}
         {feedback === 'repair' && <button className="secondary-button retry-button" onClick={props.onSubmit}>Проверить исправление</button>}
         {feedback === 'correct' && <button className="primary-button answer-button" onClick={props.onNext}>Следующее задание <span>→</span></button>}
         </section>
@@ -532,9 +723,11 @@ function Play(props: { exercise: Exercise; progress: Progress; sessionCount: num
   )
 }
 
-function Summary({ progress, sessionFloors, mastered, onAgain, onHome }: { progress: Progress; sessionFloors: number; mastered: boolean; onAgain: () => void; onHome: () => void }) {
-  const repairs = repairExerciseIds(progress).length
-  return <main className="screen summary-screen"><div className="summary-icon">{mastered ? '★' : '✦'}</div><p className="eyebrow">СЕССИЯ ЗАВЕРШЕНА</p><h1>{mastered ? 'Тема освоена!' : 'Башня растёт!'}</h1><p className="summary-copy">{mastered ? 'Ты научился доказывать написание слов.' : 'Каждая попытка делает следующий этаж крепче.'}</p><Tower floors={progress.floors} target={progress.targetFloors} damaged={repairs > 0} modules={progress.modules} /><div className="result-grid"><div><strong>+{sessionFloors}</strong><small>этажей сегодня</small></div><div><strong>{repairs}</strong><small>этажей в ремонте</small></div><div><strong>{progress.attempts.length}</strong><small>попыток всего</small></div></div><button className="primary-button start-button" onClick={onAgain}>Ещё одна короткая игра <span>→</span></button><button className="secondary-button" onClick={onHome}>На главную</button></main>
+function Summary({ mode, topicId: selectedTopicId, progress, sessionFloors, mastered, onAgain, onHome }: { mode: GameMode; topicId?: EnglishTopicId; progress: Progress; sessionFloors: number; mastered: boolean; onAgain: () => void; onHome: () => void }) {
+  const english = mode === 'english'
+  const topicId = selectedTopicId ?? englishTopics.find((topic) => progress.attempts.at(-1)?.exerciseId.includes(topic.id))?.id ?? englishTopics[0].id
+  const repairs = repairExerciseIds(progress, english ? englishExercisesFor(topicId) : exercises).length
+  return <main className={'screen summary-screen ' + (english ? 'english-summary' : '')}><div className="summary-icon">{mastered ? '★' : english ? '🛍️' : '✦'}</div><p className="eyebrow">СЕССИЯ ЗАВЕРШЕНА</p><h1>{mastered ? 'Тема освоена!' : english ? 'Корзина полнее!' : 'Башня растёт!'}</h1><p className="summary-copy">{mastered ? english ? 'Ты уверенно узнаёшь слова и фразы в контексте.' : 'Ты научился доказывать написание слов.' : english ? 'Каждый выбранный перевод превращается в полезную языковую привычку.' : 'Каждая попытка делает следующий этаж крепче.'}</p>{english ? <BasketStack progress={progress} topicId={topicId} /> : <Tower floors={progress.floors} target={progress.targetFloors} damaged={repairs > 0} modules={progress.modules} />}<div className="result-grid"><div><strong>+{sessionFloors}</strong><small>{english ? `${productLabel(sessionFloors)} сегодня` : `${floorLabel(sessionFloors)} сегодня`}</small></div><div><strong>{repairs}</strong><small>{english ? 'на проверке' : 'этажей в ремонте'}</small></div><div><strong>{progress.attempts.length}</strong><small>попыток всего</small></div></div><button className="primary-button start-button" onClick={onAgain}>Ещё одна короткая игра <span>→</span></button><button className="secondary-button" onClick={onHome}>{english ? 'К бутикам' : 'На главную'}</button></main>
 }
 
 function Parent({ progress, onBack, onReset, onExport, onImport }: { progress: Progress; onBack: () => void; onReset: () => void; onExport: () => void; onImport: (file: File) => void }) {

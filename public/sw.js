@@ -1,12 +1,13 @@
 // Меняйте версию при выпуске новой оболочки: старый кэш удалится при активации.
 // Версия меняется при выпуске новой оболочки, чтобы старые хэши Vite
 // не оставались в кэше после деплоя на GitHub Pages.
-const CACHE = 'planeta-5plus-shell-v11'
+const CACHE = 'planeta-5plus-shell-v12'
 const CORE = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './assets/world/manifest.json',
   './assets/world/city-background-plaza-v1.jpg',
   './assets/world/city-districts-panorama-v1.jpg',
+  './assets/world/english/mall-panorama-v1.png',
   './assets/world/russian/foundation-v1.png',
   './assets/world/russian/floor-standard-v2.png',
   './assets/world/russian/floor-x2-v2.png',

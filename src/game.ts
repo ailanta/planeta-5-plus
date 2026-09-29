@@ -19,6 +19,9 @@ export function matches(value: string, accepted: string[]): boolean {
 }
 
 export function answerIsCorrect(exercise: Exercise, word: string, checkWord = '', selectedErrorWord = ''): boolean {
+  if (exercise.taskType === 'translation-choice' || exercise.taskType === 'sentence-choice') {
+    return matches(word, exercise.acceptedAnswers.word)
+  }
   if (exercise.level === 1) return normalizeAnswer(word) === normalizeAnswer(exercise.testedLetter)
   // The challenge level is contextual: choose the misspelled word and enter
   // its correction. A proof word is deliberately not required because a
@@ -45,7 +48,7 @@ function isDue(skill: SkillState, now: number): boolean {
  * both sources in sync at read time so a saved mistake can never disappear
  * from the repair queue after an app update or a partial migration.
  */
-export function repairExerciseIds(progress: Progress): string[] {
+export function repairExerciseIds(progress: Progress, pool: Exercise[] = exercises): string[] {
   const ids = new Set(progress.damagedExerciseIds ?? [])
   for (const module of progress.modules ?? []) {
     if (module.status === 'repair') ids.add(module.exerciseId)
@@ -61,12 +64,13 @@ export function repairExerciseIds(progress: Progress): string[] {
     }
   }
   for (const id of pending.keys()) ids.add(id)
-  return [...ids].filter((id) => exercises.some((exercise) => exercise.id === id))
+  return [...ids].filter((id) => pool.some((exercise) => exercise.id === id))
 }
 
-export function chooseExercise(progress: Progress, now = Date.now(), excludedIds: string[] = []): Exercise {
-  const available = exercises.filter((exercise) => exercise.topicId === TOPIC_ID && !excludedIds.includes(exercise.id))
-  const damagedIds = new Set(repairExerciseIds(progress))
+export function chooseExercise(progress: Progress, now = Date.now(), excludedIds: string[] = [], pool: Exercise[] = exercises, topicId = TOPIC_ID): Exercise {
+  const available = pool.filter((exercise) => exercise.topicId === topicId && !excludedIds.includes(exercise.id))
+  if (!available.length) throw new Error(`No exercises available for topic ${topicId}`)
+  const damagedIds = new Set(repairExerciseIds(progress, pool))
   const damaged = available.find((exercise) => damagedIds.has(exercise.id))
   if (damaged) return damaged
   // A family has one skill state shared by its warm-up and challenge. Use the
@@ -95,8 +99,8 @@ function nextInterval(attempt: Attempt): number {
   return 3
 }
 
-export function applyAttempt(progress: Progress, attempt: Attempt): Progress {
-  const skillId = exercises.find((item) => item.id === attempt.exerciseId)?.skillId ?? ''
+export function applyAttempt(progress: Progress, attempt: Attempt, pool: Exercise[] = exercises): Progress {
+  const skillId = pool.find((item) => item.id === attempt.exerciseId)?.skillId ?? ''
   const skill = getSkill(progress, skillId)
   const next: Progress = structuredClone(progress)
   next.modules = next.modules ?? []
@@ -124,7 +128,7 @@ export function applyAttempt(progress: Progress, attempt: Attempt): Progress {
       })
     }
   } else {
-    const wasPending = repairExerciseIds(progress).includes(attempt.exerciseId)
+    const wasPending = repairExerciseIds(progress, pool).includes(attempt.exerciseId)
     const lastMistake = [...progress.attempts].reverse().find((item) => item.exerciseId === attempt.exerciseId && (!item.firstAnswerCorrect || !item.finalCorrect))
     const independentlyRechecked = attempt.firstAnswerCorrect && attempt.hintsUsed === 0 && lastMistake?.sessionId !== attempt.sessionId
     if (independentlyRechecked) {

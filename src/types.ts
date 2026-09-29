@@ -21,6 +21,14 @@ export type Exercise = {
   errorWord?: string
   tags: string[]
   contentVersion: number
+  taskType?: 'spelling' | 'translation-choice' | 'sentence-choice'
+  choices?: string[]
+  rewardItem?: {
+    emoji: string
+    label: string
+    color: string
+    kind?: string
+  }
 }
 
 export type Attempt = {

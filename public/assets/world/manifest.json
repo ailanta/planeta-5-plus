@@ -38,12 +38,14 @@
       "assetContract": "building-front-v1"
     },
     {
-      "id": "english-word-island",
+      "id": "english-shopping-mall",
       "topicId": "english",
-      "title": "Остров слов",
-      "status": "coming-soon",
-      "scene": "placeholder",
-      "assetContract": "building-front-v1"
+      "title": "English Shopping Mall",
+      "status": "active",
+      "scene": "panoramic-mall",
+      "assetContract": "boutique-front-v1",
+      "background": "world/english/mall-panorama-v1.png",
+      "topics": ["english-clothes", "english-food", "english-toys", "english-home"]
     }
   ]
 }
