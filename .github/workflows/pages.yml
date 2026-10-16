@@ -33,6 +33,18 @@ jobs:
       - name: Build Vite app
         run: npm run build
 
+      # Both apps use the dependencies pinned by the root package-lock.json.
+      - name: Test Lingua Gallery
+        working-directory: projects/lingua-gallery
+        run: npm test
+
+      - name: Build Lingua Gallery
+        working-directory: projects/lingua-gallery
+        run: npm run build
+
+      - name: Include Lingua Gallery in Pages
+        run: cp -R projects/lingua-gallery/dist dist/lingua-gallery
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
