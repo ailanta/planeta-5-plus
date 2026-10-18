@@ -1,10 +1,28 @@
 import { describe, it, expect } from 'vitest'
-import { shops, allShopItems, lessonShop, levelMode, levelCount, dialogueId, emptySave, parseSave, type Session } from './content'
+import { catalogShopItems, shops, allShopItems, lessonShop, levelMode, levelCount, dialogueId, emptySave, parseSave, type Session } from './content'
 import { availableLevel, recommendedRoute, finishMission } from './progress'
 import { storageLocation } from './possessions'
 import { hasArt } from './Art'
 
 describe('themed word blocks',()=>{
+ it('preserves retired purchases and reopens rewritten blocks only once',()=>{
+  const old={...emptySave,contentRevision:undefined,coins:77,completed:['atelier:1','atelier:2','atelier:3','atelier:4'],owned:['skirt','atelier:block2:skirt'],placement:['atelier:block2:skirt']}
+  const migrated=parseSave(JSON.stringify(old))
+  expect(migrated.coins).toBe(77)
+  expect(migrated.owned).toEqual(old.owned)
+  expect(migrated.placement).toEqual(old.placement)
+  expect(migrated.completed).toEqual(['atelier:1','atelier:2','atelier:3'])
+  expect(migrated.contentRevision).toBe(3)
+  expect(catalogShopItems(shops[0]).find(item=>item.id==='atelier:block2:skirt')?.en).toBe('a cotton skirt')
+  expect(parseSave(JSON.stringify(migrated))).toEqual(migrated)
+ })
+ it('gives all 56 new expressions dedicated artwork, not recoloured old objects',()=>{
+  const basic=new Set(shops.flatMap(shop=>shop.items.map(item=>item.kind)))
+  const added=shops.flatMap(shop=>[4,7].flatMap(level=>lessonShop(shop,level).items))
+  expect(new Set(added.map(item=>item.kind)).size).toBe(56)
+  expect(added.every(item=>!basic.has(item.kind))).toBe(true)
+ })
+
  it('provides 84 stable illustrated expressions in short, distinct sets',()=>{
   const all=shops.flatMap(allShopItems)
   expect(all).toHaveLength(84)
@@ -16,7 +34,7 @@ describe('themed word blocks',()=>{
     expect(lesson.items).toHaveLength(4)
     expect(new Set(lesson.items.map(item=>item.en)).size).toBe(4)
     expect(new Set([lesson.reply,...lesson.wrong]).size).toBe(3)
-    for(const item of lesson.items){expect(hasArt(item.kind)).toBe(true);expect(item.example.toLowerCase()).toContain(item.en.replace(/^(a|an) /,''))}
+    for(const item of lesson.items){expect(hasArt(item.kind)).toBe(true);expect(item.example.toLowerCase()).toContain(item.en.toLowerCase().replace(/^(a|an) /,''))}
    }
   }
  })

@@ -1,4 +1,4 @@
-import { shops, allShopItems, type Save } from './content'
+import { shops, catalogShopItems, type Save } from './content'
 
 export const storageSections = [
   {shopId:'atelier',name:'Гардероб',location:'в гардеробе'},
@@ -10,7 +10,7 @@ export const storageSections = [
   {shopId:'tech',name:'Техника',location:'в разделе «Техника»'},
 ]
 export function storageLocation(itemId:string) {
-  const shop=shops.find(shop=>allShopItems(shop).some(item=>item.id===itemId))
+  const shop=shops.find(shop=>catalogShopItems(shop).some(item=>item.id===itemId))
   return storageSections.find(section=>section.shopId===shop?.id)?.location || 'в вашей коллекции'
 }
 

@@ -1,4 +1,5 @@
 import { wordBlocks } from './word-blocks'
+import { legacyWordBlocks } from './legacy-word-blocks'
 export type Item = { id: string; en: string; ru: string; kind: string; color: string; price: number; example: string }
 export type Shop = { id: string; name: string; subtitle: string; mission: string; color: string; items: Item[]; question: string; reply: string; wrong: string[] }
 export const shops: Shop[] = [
@@ -45,32 +46,40 @@ export function lessonShop(shop:Shop, level:number):Shop {
  const blockIndex=Math.floor((level-1)/3)-1
  const block=wordBlocks[shop.id]?.[blockIndex]
  if(!block)return shop
- const items=block.words.map(([base,en,ru,example])=>{
-  const original=shop.items.find(item=>item.id===base)!
-  return {...original,id:`${shop.id}:block${blockIndex+2}:${base}`,en,ru,example}
- })
+ const items=block.words.map(([key,en,ru,example])=>({
+  id:`${shop.id}:v3:${key}`,kind:`${shop.id}:${key}`,color:shop.color,
+  price:shop.id==='market'||shop.id==='cafe'?25:40,en,ru,example
+ }))
  return {...shop,mission:block.title,items,question:'What would you like?',reply:`I would like ${items[0].en}, please.`,wrong:items.slice(1,3).map(item=>`I would like ${item.en}, please.`)}
 }
 export function allShopItems(shop:Shop) {return [1,4,7].flatMap(level=>lessonShop(shop,level).items)}
-export function dialogueId(shopId:string,level:number) {const block=Math.floor((level-1)/3);return block===0?`${shopId}:dialogue`:`${shopId}:block${block+1}:dialogue`}
+// Retired expressions remain available only to owners, never in new lessons.
+export function catalogShopItems(shop:Shop):Item[] {
+ const legacy=legacyWordBlocks[shop.id].flatMap((block,index)=>block.words.map(([base,en,ru,example])=>({
+  ...shop.items.find(item=>item.id===base)!,id:`${shop.id}:block${index+2}:${base}`,en,ru,example
+ })))
+ return [...allShopItems(shop),...legacy]
+}
+export function dialogueId(shopId:string,level:number) {const block=Math.floor((level-1)/3);return block===0?`${shopId}:dialogue`:`${shopId}:v3:block${block+1}:dialogue`}
 export function levelLabel(shop:Shop,level:number) {return `${Math.floor((level-1)/3)+1}. ${lessonShop(shop,level).mission} · ${['Слова','На слух','Фразы'][levelMode(level)-1]}`}
 
 export function shuffle<T>(values: T[]): T[] { const copy=[...values]; for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]} return copy }
 export type Session = {shopId:string;level:number;stage:'learn'|'play';card:number;step:number;selected:string;feedback:'good'|'bad'|null;options:string[];tokens:number[];failed:string[];audioText:boolean}
-export type Save = {version:1; coins:number; owned:string[]; completed:string[]; review:string[]; learned:string[]; placement:string[];session:Session|null}
-export const emptySave:Save={version:1,coins:0,owned:[],completed:[],review:[],learned:[],placement:[],session:null}
-const itemIds = new Set(shops.flatMap(shop=>allShopItems(shop).map(item=>item.id)))
-const skillIds = new Set([...itemIds,...shops.flatMap(shop=>[1,4,7].map(level=>dialogueId(shop.id,level)))])
+export type Save = {version:1; contentRevision?:3; coins:number; owned:string[]; completed:string[]; review:string[]; learned:string[]; placement:string[];session:Session|null}
+export const emptySave:Save={version:1,contentRevision:3,coins:0,owned:[],completed:[],review:[],learned:[],placement:[],session:null}
+const itemIds = new Set(shops.flatMap(shop=>catalogShopItems(shop).map(item=>item.id)))
+const activeIds = shops.flatMap(shop=>allShopItems(shop).map(item=>item.id))
+const skillIds = new Set([...activeIds,...shops.flatMap(shop=>[1,4,7].map(level=>dialogueId(shop.id,level)))])
 export function parseSave(raw:string|null):Save {
  try {
   const value=JSON.parse(raw||'null')
   if(value?.version!==1) return {...emptySave}
   const strings=(key:string,allowed:Set<string>)=>Array.isArray(value[key])?[...new Set<string>(value[key].filter((id:unknown)=>typeof id==='string'&&allowed.has(id)))]:[]
   const owned=strings('owned',itemIds)
-  const completed=shops.flatMap(shop=>{const result:string[]=[];for(let level=1;level<=levelCount;level++){const id=`${shop.id}:${level}`;if(!Array.isArray(value.completed)||!value.completed.includes(id))break;result.push(id)}return result})
-  const save:Save={version:1,coins:Number.isSafeInteger(value.coins)&&value.coins>=0?value.coins:0,owned,completed,review:strings('review',skillIds),learned:strings('learned',skillIds),placement:strings('placement',new Set(owned)).slice(0,4),session:null}
+  const completed=shops.flatMap(shop=>{const result:string[]=[];for(let level=1;level<=(value.contentRevision===3?levelCount:3);level++){const id=`${shop.id}:${level}`;if(!Array.isArray(value.completed)||!value.completed.includes(id))break;result.push(id)}return result})
+  const save:Save={version:1,contentRevision:3,coins:Number.isSafeInteger(value.coins)&&value.coins>=0?value.coins:0,owned,completed,review:strings('review',skillIds),learned:strings('learned',skillIds),placement:strings('placement',new Set(owned)).slice(0,4),session:null}
   const s=value.session,base=shops.find(shop=>shop.id===s?.shopId),shop=base&&s?lessonShop(base,s.level):undefined
-  if(shop&&s&&Number.isInteger(s.level)&&s.level>=1&&s.level<=levelCount&&(s.level===1||completed.includes(`${shop.id}:${s.level-1}`))&&['learn','play'].includes(s.stage)&&Number.isInteger(s.card)&&s.card>=0&&s.card<4&&Number.isInteger(s.step)&&s.step>=0&&s.step<=4&&typeof s.selected==='string'&&[null,'good','bad'].includes(s.feedback)&&Array.isArray(s.options)&&s.options.every((v:unknown)=>typeof v==='string')&&Array.isArray(s.tokens)&&s.tokens.every((v:unknown)=>Number.isInteger(v)&&Number(v)>=0&&Number(v)<s.options.length)&&new Set(s.tokens).size===s.tokens.length&&Array.isArray(s.failed)&&s.failed.every((v:unknown)=>typeof v==='string'&&skillIds.has(v))&&typeof s.audioText==='boolean') {
+  if(shop&&s&&(value.contentRevision===3||s.level<=3)&&Number.isInteger(s.level)&&s.level>=1&&s.level<=levelCount&&(s.level===1||completed.includes(`${shop.id}:${s.level-1}`))&&['learn','play'].includes(s.stage)&&Number.isInteger(s.card)&&s.card>=0&&s.card<4&&Number.isInteger(s.step)&&s.step>=0&&s.step<=4&&typeof s.selected==='string'&&[null,'good','bad'].includes(s.feedback)&&Array.isArray(s.options)&&s.options.every((v:unknown)=>typeof v==='string')&&Array.isArray(s.tokens)&&s.tokens.every((v:unknown)=>Number.isInteger(v)&&Number(v)>=0&&Number(v)<s.options.length)&&new Set(s.tokens).size===s.tokens.length&&Array.isArray(s.failed)&&s.failed.every((v:unknown)=>typeof v==='string'&&skillIds.has(v))&&typeof s.audioText==='boolean') {
    const expected=s.step===4?[shop.reply,...shop.wrong]:levelMode(s.level)===3?shop.items[s.step].en.split(' '):shop.items.map(item=>item.en)
    const optionsValid=s.stage==='learn'||JSON.stringify([...s.options].sort())===JSON.stringify([...expected].sort())
    const answer=levelMode(s.level)===3&&s.step<4?s.tokens.map((i:number)=>s.options[i]).join(' '):s.selected

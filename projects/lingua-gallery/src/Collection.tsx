@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Art } from './Art'
-import { shops, allShopItems, type Save } from './content'
+import { shops, catalogShopItems, type Save } from './content'
 import { setOnDisplay, storageLocation, storageSections } from './possessions'
 
-const items=shops.flatMap(allShopItems)
+const items=shops.flatMap(catalogShopItems)
 export function Collection({save,setSave,onContinue,speak}:{save:Save;setSave:Dispatch<SetStateAction<Save>>;onContinue:()=>void;speak:(text:string)=>void}) {
   const [selected,setSelected]=useState<string|null>(null)
   const dialog=useRef<HTMLDialogElement>(null)
@@ -23,7 +23,7 @@ export function Collection({save,setSave,onContinue,speak}:{save:Save;setSave:Di
         <p className="display-help">Полка — для любимых находок. Все покупки хранятся ниже.</p>
       </section>
       <div className="owned-sections">{storageSections.map(section=>{
-        const owned=allShopItems(shops.find(shop=>shop.id===section.shopId)!).filter(item=>save.owned.includes(item.id))
+        const owned=catalogShopItems(shops.find(shop=>shop.id===section.shopId)!).filter(item=>save.owned.includes(item.id))
         if(!owned.length)return null
         return <section className={`owned-section ${section.shopId==='atelier'?'wardrobe':''}`} key={section.shopId} aria-labelledby={`storage-${section.shopId}`}>
           <div className="collection-section-title"><h2 id={`storage-${section.shopId}`}>{section.name}</h2><span>{owned.length}</span></div>

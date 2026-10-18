@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { productFrames } from './product-frames'
 const sheet = `${import.meta.env.BASE_URL}assets/products-editorial-v2.png`
 const extensionSheet = `${import.meta.env.BASE_URL}assets/products-extension-v1.png`
 
@@ -25,9 +26,13 @@ const extensionFrames: Record<string, [number, number, number, number]> = {
   headphones:[23,936,289,303], keyboard:[325,989,313,223], phone:[661,939,254,298], camera:[933,977,304,244],
 }
 
-export function hasArt(kind:string) { return kind in frames || kind in extensionFrames }
+export function hasArt(kind:string) { return kind in productFrames || kind in frames || kind in extensionFrames }
 
 export function Art({ kind, color }: { kind: string; color: string }) {
+  const product = productFrames[kind]
+  if(product)return <svg viewBox={product.frame.join(' ')} aria-hidden="true" className="product-art" focusable="false" overflow="hidden">
+    <image href={`${import.meta.env.BASE_URL}assets/${product.sheet}`} width={1774} height={887} />
+  </svg>
   const extension = kind in extensionFrames
   const frame = extension ? extensionFrames[kind] : frames[kind === 'cup' && color === '#7c9db5' ? 'mug' : kind]
   if (!frame) return null
