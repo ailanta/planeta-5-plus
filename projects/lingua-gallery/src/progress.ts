@@ -1,4 +1,4 @@
-import { shops, levelCount, lessonShop, dialogueId, type Save, type Item } from './content'
+import { shops, shuffle, levelMode, levelCount, lessonShop, dialogueId, type Save, type Item } from './content'
 
 export function availableLevel(save: Save, shopId: string) {
   for (let level = 1; level <= levelCount; level++) if (!save.completed.includes(`${shopId}:${level}`)) return level
@@ -36,6 +36,14 @@ export function purchaseItem(save:Save,item:Item):Save {
 
 export function finishMission(save:Save,shopId:string,level:number):{save:Save;reward:number} {
   if(!save.session||save.session.shopId!==shopId||save.session.level!==level||save.session.stage!=='play'||save.session.step!==4||save.session.feedback!=='good')return {save,reward:0}
-  const key=`${shopId}:${level}`,reward=save.completed.includes(key)?10:60
-  return {save:{...save,session:null,coins:save.coins+reward,completed:[...new Set([...save.completed,key])]},reward}
+  const base=shops.find(shop=>shop.id===shopId)
+  if(!base||level<1||level>levelCount||(level>1&&!save.completed.includes(`${shopId}:${level-1}`)))return {save,reward:0}
+  const key=`${shopId}:${level}`
+  const last=levelMode(level)===3
+  const reward=last&&!save.completed.includes(key)?180:0
+  const nextShop=lessonShop(base,level+1)
+  const session=last?null:{...save.session,level:level+1,card:0,step:0,selected:'',feedback:null,
+    options:shuffle(levelMode(level+1)===3?nextShop.items[0].en.split(' '):nextShop.items.map(item=>item.en)),
+    tokens:[],failed:[],audioText:false}
+  return {save:{...save,session,coins:save.coins+reward,completed:[...new Set([...save.completed,key])]},reward}
 }

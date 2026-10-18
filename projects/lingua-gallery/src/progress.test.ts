@@ -48,12 +48,37 @@ describe('learning and rewards',()=>{
   expect(corrected.review).toContain('skirt')
   expect(recordAnswer(corrected,'skirt',true,false).review).not.toContain('skirt')
  })
- it('awards a completed mission once, even if finish is repeated',()=>{
-  const session={...draft(),step:4,feedback:'good' as const,selected:shops[0].reply,options:[shops[0].reply,...shops[0].wrong]}
-  const result=finishMission({...fresh(),session},'atelier',1)
-  expect(result.reward).toBe(60);expect(result.save.session).toBeNull()
-  expect(finishMission(result.save,'atelier',1).save.coins).toBe(60)
-  expect(finishMission({...result.save,session},'atelier',1).reward).toBe(10)
+ it('awards only after all three stages and persists each transition',()=>{
+  let save=fresh()
+  for(let level=1;level<=3;level++){
+    const session={...draft(),level,step:4,feedback:'good' as const,selected:shops[0].reply,options:[shops[0].reply,...shops[0].wrong]}
+    const result=finishMission({...save,session},'atelier',level)
+    expect(result.reward).toBe(level===3?180:0)
+    save=parseSave(JSON.stringify(result.save))
+    expect(save.completed).toContain(`atelier:${level}`)
+    if(level<3){
+      expect(save.session?.level).toBe(level+1)
+      expect(save.session?.step).toBe(0)
+      expect(save.session?.feedback).toBeNull()
+      expect(recommendedRoute(save)).toEqual({shop:0,level:level+1})
+    }else expect(save.session).toBeNull()
+  }
+  expect(save.coins).toBe(180)
+  expect(finishMission(save,'atelier',3).save.coins).toBe(180)
+ })
+ it('cannot bypass earlier stages to get a block reward',()=>{
+  const session={...draft(),level:3,step:4,feedback:'good' as const}
+  expect(finishMission({...fresh(),session},'atelier',3).reward).toBe(0)
+ })
+ it('buys several different items, preserving balance and duplicate protection',()=>{
+  let save={...fresh(),coins:100}
+  save=purchaseItem(save,shops[0].items[0])
+  save=purchaseItem(save,shops[0].items[1])
+  expect(save.coins).toBe(30)
+  expect(save.owned).toEqual(['skirt','sweater'])
+  expect(purchaseItem(save,shops[0].items[0])).toBe(save)
+  expect(purchaseItem(save,shops[0].items[2])).toBe(save)
+  expect(parseSave(JSON.stringify(save)).owned).toEqual(save.owned)
  })
  it('cannot finish an unanswered mission or charge for a duplicate purchase',()=>{
   expect(finishMission({...fresh(),session:draft()},'atelier',1).reward).toBe(0)

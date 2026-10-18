@@ -56,7 +56,8 @@ describe('themed word blocks',()=>{
   expect(storageLocation(id)).toBe('в гардеробе')
   expect(recommendedRoute({...save,session:null})).toEqual({shop:0,level:4})
   const result=finishMission(save,'atelier',4)
-  expect(result.reward).toBe(60)
+  expect(result.reward).toBe(0)
+  expect(result.save.session?.level).toBe(5)
   expect(parseSave(JSON.stringify(result.save)).completed).toContain('atelier:4')
  })
  it('rejects a locked new block and a mismatched old answer set',()=>{

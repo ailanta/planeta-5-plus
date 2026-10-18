@@ -37,7 +37,7 @@ export default function App() {
   const [audioText, setAudioText] = useState(false)
   const [reward, setReward] = useState(0)
   const [purchaseId, setPurchaseId] = useState('')
-  const [purchased, setPurchased] = useState(false)
+  const [purchaseMessage, setPurchaseMessage] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const menu = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -111,19 +111,29 @@ export default function App() {
   function next() {
     if (step < 4) { prepare(step + 1); return }
     if (rewarded.current) return
-    const {reward:amount} = finishMission(save, shop.id, level)
-    if (!amount) return
+    const result = finishMission(save, shop.id, level)
+    if (result.save === save) return
+    setSave(result.save)
+    if (result.save.session) {
+      const session=result.save.session
+      window.speechSynthesis?.cancel()
+      failed.current.clear()
+      setRoute(current=>({...current,level:session.level}))
+      setCard(0); setStep(0); setSelected(''); setTokens([]); setFeedback(null); setAudioText(false)
+      setOptions(session.options)
+      setNotice(`Этап ${levelMode(session.level)} из 3 · ${levelNames[levelMode(session.level)-1]}`)
+      return
+    }
     rewarded.current = true
-    setReward(amount)
-    setSave(current => finishMission(current, shop.id, level).save)
-    setPurchaseId((shop.items.find(item => !save.owned.includes(item.id) && item.price <= save.coins + amount) || shop.items[0]).id)
-    setPurchased(false); setPage('result')
+    setReward(result.reward)
+    setPurchaseId((shop.items.find(item => !save.owned.includes(item.id) && item.price <= result.save.coins) || shop.items[0]).id)
+    setPurchaseMessage(''); setPage('result')
   }
   function returnHome() { setRoute(recommendedRoute(save)); setNotice(''); setPage('gallery') }
   function buy() {
     if (save.owned.includes(purchase.id) || save.coins < purchase.price) return
     setSave(current => purchaseItem(current, purchase))
-    setPurchased(true)
+    setPurchaseMessage(`«${purchase.ru}» — покупка сохранена ${storageLocation(purchase.id)}. Можно выбрать следующую вещь.`)
   }
   function changeShop(index: number) { setRoute({ shop: index, level: availableLevel(save, shops[index].id) }) }
   const answerReady = challenge || mode !== 3 ? !!selected : tokens.length === options.length
@@ -138,7 +148,7 @@ export default function App() {
     {storageError && <p className="storage-error" role="alert">{storageError}</p>}{notice && <p className="toast" role="status">{notice}</p>}
 
     {page === 'gallery' && <main className="home">
-      <div className="home-copy"><span className="eyebrow">Английский в игре</span><h1 ref={heading} tabIndex={-1}>За покупками.<br /><span>За новыми словами.</span></h1><p>Знакомьтесь со словами, делайте покупки.<br className="desktop-break" /> Немного английского каждый день.</p><button className="primary home-start" onClick={begin}>{hasProgress ? 'Продолжить' : 'Начать'}<Icon name="arrow" /></button><span className="start-note">{resumable ? resumable.stage === 'play' ? `Продолжим с задания ${resumable.step + 1} из 5` : `Продолжим со слова ${resumable.card + 1} из 4` : `5 минут · ${shop.subtitle} · ${isReview && mode === 1 ? 'Повторение' : levelLabel(shops[route.shop], level)}`}</span><button className="text-button choose-shop" onClick={() => setMenuOpen(true)}>Выбрать магазин</button></div>
+      <div className="home-copy"><span className="eyebrow">Английский в игре</span><h1 ref={heading} tabIndex={-1}>За покупками.<br /><span>За новыми словами.</span></h1><p>Знакомьтесь со словами, делайте покупки.<br className="desktop-break" /> Немного английского каждый день.</p><button className="primary home-start" onClick={begin}>{hasProgress ? 'Продолжить' : 'Начать'}<Icon name="arrow" /></button><span className="start-note">{resumable ? resumable.stage === 'play' ? `Продолжим с задания ${(mode - 1) * 5 + resumable.step + 1} из 15` : `Продолжим со слова ${resumable.card + 1} из 4` : `5 минут · ${shop.subtitle} · ${isReview && mode === 1 ? 'Повторение' : levelLabel(shops[route.shop], level)}`}</span><button className="text-button choose-shop" onClick={() => setMenuOpen(true)}>Выбрать магазин</button></div>
       <ShopCarousel index={route.shop} onChange={changeShop} />
     </main>}
 
@@ -146,15 +156,28 @@ export default function App() {
 
     {page === 'play' && <main className="game-page">
       <div className="game-world" aria-hidden="true"><div className="panorama" style={pictureStyle} /><div className="world-wash" /><div className="world-label">{shop.name}</div></div>
-      <section className="task-card"><div className="task-meta"><button className="icon-button" aria-label="Выйти из миссии" onClick={returnHome}><Icon name="close" /></button><span>{challenge ? 'Разговор с продавцом' : levelNames[mode - 1]}</span><span>{step + 1} / 5</span></div><div className="progress" aria-label={`Задание ${step + 1} из 5`}><i style={{ width: `${(step + 1) * 20}%` }} /></div>
+      <section className="task-card"><div className="task-meta"><button className="icon-button" aria-label="Выйти из миссии" onClick={returnHome}><Icon name="close" /></button><span>{challenge ? 'Разговор с продавцом' : levelNames[mode - 1]}</span><span>{(mode - 1) * 5 + step + 1} / 15</span></div><div className="progress" aria-label={`Задание ${(mode - 1) * 5 + step + 1} из 15`}><i style={{ width: `${((mode - 1) * 5 + step + 1) / 15 * 100}%` }} /></div>
         <div className="question"><p>{challenge ? `Попросите: ${shop.items[0].ru}` : mode === 2 ? 'Послушайте и выберите перевод' : mode === 3 ? 'Соберите по-английски' : 'Как сказать по-английски?'}</p>{mode === 2 && !challenge && <button className="audio-button" aria-label="Послушать выражение" onClick={() => speak(item.en)}><Icon name="sound" /></button>}<h1 ref={heading} tabIndex={-1} lang={challenge ? 'en' : 'ru'}>{challenge ? shop.question : mode === 2 ? 'Что вы услышали?' : item.ru}</h1>{mode === 2 && !challenge && <><button className="text-button audio-hint" onClick={() => audioText ? setAudioText(false) : showAudioText()}>{audioText ? 'Скрыть подсказку' : 'Показать текст'}</button>{audioText && <span className="audio-text" lang="en">{item.en}</span>}</>}</div>
         {mode === 3 && !challenge ? <div className="phrase-task"><div className="sentence-builder" aria-live="polite">{tokens.length ? tokens.map(index => <button key={index} disabled={feedback === 'good'} onClick={() => { setTokens(tokens.filter(value => value !== index)); setFeedback(null) }}>{options[index]}</button>) : <span>Нажимайте на слова по порядку</span>}</div><div className="tokens">{options.map((word, index) => <button key={index} disabled={feedback === 'good' || tokens.includes(index)} onClick={() => { setTokens([...tokens, index]); setFeedback(null) }}>{word}</button>)}</div></div> : <div className={`answers ${challenge ? 'sentence-answers' : ''}`}>{options.map(option => <button key={option} disabled={feedback === 'good'} aria-pressed={selected === option} className={selected === option ? 'selected' : ''} onClick={() => { setSelected(option); setFeedback(null) }}>{mode === 2 && !challenge ? shop.items.find(item => item.en === option)?.ru : option}{selected === option && <span className="answer-dot" />}</button>)}</div>}
-        <div className={`feedback ${feedback || ''}`} aria-live="polite">{feedback === 'good' ? <><Icon name="check" /><span>{challenge ? 'Вы договорились!' : 'Верно!'}</span></> : feedback === 'bad' ? <><span>Попробуйте ещё раз</span><small lang="en">{challenge ? shop.reply : `${item.ru} — ${item.en}`}</small></> : null}</div><button className="primary task-action" disabled={feedback !== 'good' && !answerReady} onClick={feedback === 'good' ? next : check}>{feedback === 'good' ? challenge ? 'Завершить' : 'Дальше' : 'Проверить'}<Icon name="arrow" /></button>
+        <div className={`feedback ${feedback || ''}`} aria-live="polite">{feedback === 'good' ? <><Icon name="check" /><span>{challenge ? 'Вы договорились!' : 'Верно!'}</span></> : feedback === 'bad' ? <><span>Попробуйте ещё раз</span><small lang="en">{challenge ? shop.reply : `${item.ru} — ${item.en}`}</small></> : null}</div><button className="primary task-action" disabled={feedback !== 'good' && !answerReady} onClick={feedback === 'good' ? next : check}>{feedback === 'good' ? challenge ? mode === 3 ? 'Завершить набор' : 'Следующий этап' : 'Дальше' : 'Проверить'}<Icon name="arrow" /></button>
       </section>
       <div className="basket" aria-label={`В корзине ${Math.min(step + (feedback === 'good' && !challenge ? 1 : 0), 4)} из 4 вещей`}><div className="basket-label"><Icon name="bag" /><span>Ваша корзина</span></div><div className="basket-items">{shop.items.map((item, index) => <div key={item.id} className="basket-slot">{index < step || (index === step && feedback === 'good') ? <Art kind={item.kind} color={item.color} /> : <span />}</div>)}</div></div>
     </main>}
 
-    {page === 'result' && <main className="result-page"><span className="success-seal"><Icon name="check" /></span><h1 ref={heading} tabIndex={-1}>{purchased ? 'Теперь это ваше.' : 'Заказ собран!'}</h1><p>{purchased ? `Покупка сохранена ${storageLocation(purchase.id)}. Посмотреть можно в «Моих покупках».` : `Новые слова — с вами. И ещё ${reward} монет на покупки.`}</p><section className="purchase-card"><div className="purchase-art"><Art kind={purchase.kind} color={purchase.color} /></div><h2>{purchase.ru}</h2><span lang="en">{purchase.en}</span>{!purchased && <div className="item-picker" aria-label="Выберите покупку">{shop.items.map(item => <button key={item.id} aria-label={`${item.ru}, ${item.price} монет${save.owned.includes(item.id) ? ', уже куплено' : ''}`} aria-pressed={purchase.id === item.id} className={purchase.id === item.id ? 'picked' : ''} onClick={() => setPurchaseId(item.id)}><Art kind={item.kind} color={item.color} />{save.owned.includes(item.id) && <i><Icon name="check" /></i>}</button>)}</div>}<button className="primary" onClick={purchased || !canBuy ? returnHome : buy}>{purchased || !canBuy ? 'Продолжить' : `Купить за ${purchase.price} монет`}<Icon name="arrow" /></button>{!purchased && save.owned.includes(purchase.id) && <small>Уже в вашей коллекции</small>}{!purchased && !save.owned.includes(purchase.id) && !canBuy && <small>Ещё {purchase.price - save.coins} монет — за следующую прогулку</small>}</section>{!purchased && canBuy && <button className="text-button skip-link" onClick={returnHome}>Продолжить без покупки</button>}</main>}
+    {page === 'result' && <main className="result-page"><span className="success-seal"><Icon name="check" /></span>
+      <h1 ref={heading} tabIndex={-1}>Набор пройден!</h1>
+      <p>{reward ? `Все три этапа завершены. +${reward} монет на покупки.` : 'Повторение завершено. Награда за этот набор уже получена.'}</p>
+      <section className="purchase-card">
+        <p className="shopping-balance" aria-live="polite">Ваш баланс: {save.coins} монет</p>
+        <div className="purchase-art"><Art kind={purchase.kind} color={purchase.color} /></div>
+        <h2>{purchase.ru}</h2><span lang="en">{purchase.en}</span>
+        <div className="item-picker" aria-label="Выберите покупки">{shop.items.map(item => <button key={item.id} aria-label={`${item.ru}, ${item.price} монет${save.owned.includes(item.id) ? ', уже куплено' : ''}`} aria-pressed={purchase.id === item.id} className={purchase.id === item.id ? 'picked' : ''} onClick={() => setPurchaseId(item.id)}><Art kind={item.kind} color={item.color} />{save.owned.includes(item.id) && <i><Icon name="check" /></i>}</button>)}</div>
+        <button className="primary" disabled={!canBuy} onClick={buy}>{save.owned.includes(purchase.id) ? 'Уже куплено' : `Купить за ${purchase.price} монет`}<Icon name="bag" /></button>
+        {!save.owned.includes(purchase.id) && !canBuy && <small>Не хватает {purchase.price-save.coins} монет. Можно выбрать другую вещь.</small>}
+        <p role="status">{purchaseMessage || 'Можно купить несколько разных вещей — выбирайте их по очереди.'}</p>
+      </section>
+      <button className="text-button skip-link" onClick={returnHome}>Завершить покупки →</button>
+    </main>}
 
     {page === 'room' && <Collection save={save} setSave={setSave} onContinue={returnHome} speak={speak} />}
 
