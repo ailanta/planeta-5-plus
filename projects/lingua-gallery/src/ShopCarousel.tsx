@@ -13,7 +13,7 @@ export function ShopCarousel({ index, onChange }: { index:number; onChange:(inde
   }
   return <section className="shop-carousel" aria-roledescription="карусель" aria-label="Магазины галереи" tabIndex={0}
     onKeyDown={event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();select(index+(event.key==='ArrowLeft'?-1:1))}}}>
-    <div className="gallery-visual"
+    <div className="gallery-visual" data-panels={index < 3 ? 3 : 4}
       onTouchStart={event=>{if(event.touches.length!==1||(event.target as HTMLElement).closest('button')){start.current=null;return}start.current={x:event.touches[0].clientX,y:event.touches[0].clientY}}}
       onTouchCancel={()=>{start.current=null}}
       onTouchEnd={event=>{const origin=start.current;start.current=null;if(!origin)return;const dx=event.changedTouches[0].clientX-origin.x,dy=event.changedTouches[0].clientY-origin.y;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.4)select(index+(dx<0?1:-1))}}>

@@ -5,11 +5,12 @@ import { sceneStyle } from './scenes'
 import { Art } from './Art'
 import { ShopCarousel } from './ShopCarousel'
 import { Collection } from './Collection'
+import { Breakfast } from './BreakfastGame'
 import { storageLocation } from './possessions'
 import './interface.css'
 import './navigation-collection.css'
 
-type Page = 'gallery' | 'learn' | 'play' | 'result' | 'room'
+type Page = 'gallery' | 'learn' | 'play' | 'result' | 'room' | 'breakfast'
 const levelNames = ['Узнаём слова', 'Слушаем', 'Собираем фразы']
 
 export function Icon({ name }: { name: 'sound' | 'bag' | 'arrow' | 'close' | 'check' }) {
@@ -149,6 +150,7 @@ export default function App() {
 
     {page === 'gallery' && <main className="home">
       <div className="home-copy"><span className="eyebrow">Английский в игре</span><h1 ref={heading} tabIndex={-1}>За покупками.<br /><span>За новыми словами.</span></h1><p>Знакомьтесь со словами, делайте покупки.<br className="desktop-break" /> Немного английского каждый день.</p><button className="primary home-start" onClick={begin}>{hasProgress ? 'Продолжить' : 'Начать'}<Icon name="arrow" /></button><span className="start-note">{resumable ? resumable.stage === 'play' ? `Продолжим с задания ${(mode - 1) * 5 + resumable.step + 1} из 15` : `Продолжим со слова ${resumable.card + 1} из 4` : `5 минут · ${shop.subtitle} · ${isReview && mode === 1 ? 'Повторение' : levelLabel(shops[route.shop], level)}`}</span><button className="text-button choose-shop" onClick={() => setMenuOpen(true)}>Выбрать магазин</button></div>
+      <button className="day-entry" onClick={()=>setPage('breakfast')}><img src={`${import.meta.env.BASE_URL}assets/breakfast-kitchen-v1.png`} alt="" /><span><strong>Мой день · Завтрак дома</strong><small>{save.breakfast?.session?'Продолжить историю':'Новый опыт: учимся действиям'}</small></span><span aria-hidden="true">→</span></button>
       <ShopCarousel index={route.shop} onChange={changeShop} />
     </main>}
 
@@ -178,6 +180,10 @@ export default function App() {
       </section>
       <button className="text-button skip-link" onClick={returnHome}>Завершить покупки →</button>
     </main>}
+
+    {page === 'breakfast' && <Breakfast save={save} setSave={setSave} onExit={returnHome} onShopping={()=>{
+      setRoute({shop:1,level:1});setReward(save.breakfast?.lastReward??0);setPurchaseId('apple');setPurchaseMessage('');setPage('result')
+    }} />}
 
     {page === 'room' && <Collection save={save} setSave={setSave} onContinue={returnHome} speak={speak} />}
 

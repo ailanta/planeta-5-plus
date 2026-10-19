@@ -1,3 +1,4 @@
+import { parseBreakfast, type BreakfastProgress } from './breakfast'
 import { wordBlocks } from './word-blocks'
 import { legacyWordBlocks } from './legacy-word-blocks'
 export type Item = { id: string; en: string; ru: string; kind: string; color: string; price: number; example: string }
@@ -65,7 +66,7 @@ export function levelLabel(shop:Shop,level:number) {return `${Math.floor((level-
 
 export function shuffle<T>(values: T[]): T[] { const copy=[...values]; for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]} return copy }
 export type Session = {shopId:string;level:number;stage:'learn'|'play';card:number;step:number;selected:string;feedback:'good'|'bad'|null;options:string[];tokens:number[];failed:string[];audioText:boolean}
-export type Save = {version:1; contentRevision?:3; coins:number; owned:string[]; completed:string[]; review:string[]; learned:string[]; placement:string[];session:Session|null}
+export type Save = {breakfast?:BreakfastProgress; version:1; contentRevision?:3; coins:number; owned:string[]; completed:string[]; review:string[]; learned:string[]; placement:string[];session:Session|null}
 export const emptySave:Save={version:1,contentRevision:3,coins:0,owned:[],completed:[],review:[],learned:[],placement:[],session:null}
 const itemIds = new Set(shops.flatMap(shop=>catalogShopItems(shop).map(item=>item.id)))
 const activeIds = shops.flatMap(shop=>allShopItems(shop).map(item=>item.id))
@@ -86,6 +87,8 @@ export function parseSave(raw:string|null):Save {
    const feedbackValid=s.feedback!=='good'||answer===(s.step===4?shop.reply:shop.items[s.step].en)
    if(optionsValid&&feedbackValid)save.session={...s,failed:[...new Set<string>(s.failed)]}
   }
+  const breakfast=parseBreakfast(value.breakfast)
+  if(breakfast)save.breakfast=breakfast
   return save
  }catch{return {...emptySave}}
 }
