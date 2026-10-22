@@ -20,10 +20,9 @@ export function ShopCarousel({ index, onChange }: { index:number; onChange:(inde
       <div key={shop.id} className={`panorama carousel-scene ${direction>0?'from-right':'from-left'}`} style={sceneStyle(shop.id)} aria-hidden="true" />
       <div className="visual-fade" />
       <button className="shop-arrow previous" aria-label={index?`Предыдущий магазин: ${shops[index-1].subtitle}`:'Первый магазин'} disabled={!index} onClick={()=>select(index-1)}>←</button>
-      <div className="shop-caption" aria-live="polite" aria-atomic="true"><span>{index+1} из {shops.length} · {shop.name}</span><strong>{shop.subtitle}</strong></div>
+      <div className="shop-caption" aria-live="polite" aria-atomic="true"><strong>{shop.subtitle}</strong></div>
       <button className="shop-arrow next" aria-label={index<shops.length-1?`Следующий магазин: ${shops[index+1].subtitle}`:'Последний магазин'} disabled={index===shops.length-1} onClick={()=>select(index+1)}>→</button>
     </div>
     <div className="shop-pagination" aria-label="Перейти к магазину">{shops.map((shop,i)=><button key={shop.id} aria-label={shop.subtitle} aria-current={i===index?'true':undefined} onClick={()=>select(i)}><span /></button>)}</div>
-    <p className="carousel-hint">Листайте магазины стрелками или свайпом</p>
   </section>
 }

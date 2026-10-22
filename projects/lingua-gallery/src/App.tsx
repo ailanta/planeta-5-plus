@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { shops, shuffle, readSave, lessonShop, levelMode, levelCount, levelLabel, dialogueId } from './content'
+import { shops, shuffle, readSave, lessonShop, levelMode, dialogueId } from './content'
 import { availableLevel, recommendedRoute, recordAnswer, purchaseItem, finishMission } from './progress'
 import { sceneStyle } from './scenes'
 import { Art } from './Art'
@@ -39,8 +39,6 @@ export default function App() {
   const [reward, setReward] = useState(0)
   const [purchaseId, setPurchaseId] = useState('')
   const [purchaseMessage, setPurchaseMessage] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menu = useRef<HTMLDialogElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const failed = useRef(new Set<string>())
   const rewarded = useRef(false)
@@ -50,9 +48,7 @@ export default function App() {
   const item = shop.items[step % 4]
   const challenge = step === 4
   const purchase = shop.items.find(item => item.id === purchaseId) || shop.items[0]
-  const hasProgress = !!save.session || save.completed.length > 0 || save.learned.length > 0
   const resumable = save.session?.shopId === shop.id && save.session.level === level ? save.session : null
-  const isReview = shop.items.some(item => save.review.includes(item.id)) || save.review.includes(dialogueId(shop.id, level))
 
   useEffect(() => {
     try { localStorage.setItem('lingua-gallery:v1', JSON.stringify(save)); setStorageError('') }
@@ -63,7 +59,6 @@ export default function App() {
     setSave(current => ({...current, session: {shopId:shop.id, level, stage:page, card, step, selected, feedback, options, tokens, failed:[...failed.current], audioText}}))
   }, [page, shop.id, level, card, step, selected, feedback, options, tokens, audioText])
   useEffect(() => { window.scrollTo(0, 0); heading.current?.focus({ preventScroll: true }); window.speechSynthesis?.cancel() }, [page])
-  useEffect(() => { if (menuOpen) menu.current?.showModal(); else menu.current?.close() }, [menuOpen])
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 4000); return () => window.clearTimeout(timer) }, [notice])
 
   function speak(text: string) {
@@ -149,9 +144,18 @@ export default function App() {
     {storageError && <p className="storage-error" role="alert">{storageError}</p>}{notice && <p className="toast" role="status">{notice}</p>}
 
     {page === 'gallery' && <main className="home">
-      <div className="home-copy"><span className="eyebrow">Английский в игре</span><h1 ref={heading} tabIndex={-1}>За покупками.<br /><span>За новыми словами.</span></h1><p>Знакомьтесь со словами, делайте покупки.<br className="desktop-break" /> Немного английского каждый день.</p><button className="primary home-start" onClick={begin}>{hasProgress ? 'Продолжить' : 'Начать'}<Icon name="arrow" /></button><span className="start-note">{resumable ? resumable.stage === 'play' ? `Продолжим с задания ${(mode - 1) * 5 + resumable.step + 1} из 15` : `Продолжим со слова ${resumable.card + 1} из 4` : `5 минут · ${shop.subtitle} · ${isReview && mode === 1 ? 'Повторение' : levelLabel(shops[route.shop], level)}`}</span><button className="text-button choose-shop" onClick={() => setMenuOpen(true)}>Выбрать магазин</button></div>
-      <button className="day-entry" onClick={()=>setPage('breakfast')}><img src={`${import.meta.env.BASE_URL}assets/breakfast-kitchen-v1.png`} alt="" /><span><strong>Мой день · Завтрак дома</strong><small>{save.breakfast?.session?'Продолжить историю':'Новый опыт: учимся действиям'}</small></span><span aria-hidden="true">→</span></button>
-      <ShopCarousel index={route.shop} onChange={changeShop} />
+      <section className="home-shopping" aria-label="Магазины">
+        <h1 className="visually-hidden" ref={heading} tabIndex={-1}>Магазины галереи</h1>
+        <ShopCarousel index={route.shop} onChange={changeShop} />
+        <div className="home-shop-action">
+          <button className="primary" onClick={begin}>{resumable ? 'Продолжить покупки' : 'Начать покупки'}<Icon name="arrow" /></button>
+          {resumable && <p className="start-note">{resumable.stage === 'play' ? `Задание ${(mode - 1) * 5 + resumable.step + 1} из 15` : `Знакомство со словами · ${resumable.card + 1} из 4`}</p>}
+        </div>
+      </section>
+      <section className="home-day" aria-labelledby="home-day-title">
+        <h2 id="home-day-title">Мой день</h2>
+        <button className="day-entry" onClick={()=>setPage('breakfast')}><img src={`${import.meta.env.BASE_URL}assets/breakfast-kitchen-v1.png`} alt="" /><span><strong>Завтрак дома</strong>{save.breakfast?.session && <small>Продолжить историю</small>}</span><span aria-hidden="true">→</span></button>
+      </section>
     </main>}
 
     {page === 'learn' && <main className="focused-page"><div className="lesson-meta"><button className="text-button" onClick={returnHome}>← Назад</button><span>Знакомимся со словами · {card + 1} / 4</span><span className="meta-spacer" /></div><section className="learning-card"><div className="art-well"><Art kind={shop.items[card].kind} color={shop.items[card].color} /></div><div className="word-copy"><div className="word-title"><h1 ref={heading} tabIndex={-1} lang="en">{shop.items[card].en}</h1><button className="icon-button sound-button" aria-label={`Послушать ${shop.items[card].en}`} onClick={() => speak(shop.items[card].en)}><Icon name="sound" /></button></div><p className="translation">{shop.items[card].ru}</p><p className="example" lang="en">{shop.items[card].example}</p><button className="primary" onClick={() => card < 3 ? setCard(card + 1) : startMission()}>{card < 3 ? 'Дальше' : 'За покупками'}<Icon name="arrow" /></button></div></section><button className="text-button skip-link" onClick={startMission}>Уже знаю — к заданиям</button></main>}
@@ -187,6 +191,5 @@ export default function App() {
 
     {page === 'room' && <Collection save={save} setSave={setSave} onContinue={returnHome} speak={speak} />}
 
-    <dialog ref={menu} className="shop-dialog" onCancel={() => setMenuOpen(false)} onClose={() => setMenuOpen(false)} aria-labelledby="shop-dialog-title"><div className="dialog-top"><h2 id="shop-dialog-title">Куда заглянем?</h2><button className="icon-button" aria-label="Закрыть выбор магазина" onClick={() => setMenuOpen(false)}><Icon name="close" /></button></div><div className="shop-options">{shops.map((shop, index) => <button key={shop.id} aria-pressed={route.shop === index} onClick={() => changeShop(index)}><span className="shop-option-art"><Art kind={shop.items[0].kind} color={shop.items[0].color} /></span><span><strong>{shop.subtitle}</strong><small>{shop.name} · {save.completed.filter(id => id.startsWith(`${shop.id}:`)).length} / {levelCount}</small></span>{route.shop === index && <Icon name="check" />}</button>)}</div><label className="level-select">Уровень<select value={level} onChange={event => setRoute(current => ({ ...current, level: Number(event.target.value) }))}>{Array.from({length:levelCount}, (_, index) => levelLabel(shops[route.shop], index + 1)).map((name, index) => <option value={index + 1} key={name} disabled={index + 1 > availableLevel(save, shop.id)}>{index + 1}. {name}</option>)}</select></label><button className="primary" onClick={() => setMenuOpen(false)}>Готово<Icon name="check" /></button></dialog>
   </div>
 }

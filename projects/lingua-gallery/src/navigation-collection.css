@@ -10,3 +10,17 @@
  .home .shop-carousel .gallery-visual[data-panels="3"] .panorama{background-size:300% auto}
  .home .shop-carousel .gallery-visual[data-panels="4"] .panorama{background-size:400% auto}
 }
+/* One storefront and its action form a single, quiet home screen. */
+.home{max-width:488px;padding:12px 24px 40px}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.home .shop-carousel{max-width:none}
+.home .shop-carousel .gallery-visual{margin-top:0}
+.home-shop-action .primary{width:100%;margin:0}
+.home-shop-action .start-note{text-align:center;margin-top:10px;color:var(--muted)}
+.home-day{margin-top:32px;padding-top:24px;border-top:1px solid var(--line)}
+.home-day h2{font-size:18px;letter-spacing:-.02em}
+.home-day .day-entry{width:100%;max-width:none;margin:12px 0 0;padding:10px;background:var(--paper);border-color:var(--line);border-radius:16px}
+.home-day .day-entry img{width:72px;height:58px}
+.home-day .day-entry>span:last-child{margin-right:8px}
+.home-day .day-entry:hover{background:var(--sage)}
+@media(max-width:600px){.home{padding:8px 20px 28px}.home-day{margin-top:26px;padding-top:20px}}
