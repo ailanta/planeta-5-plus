@@ -145,7 +145,7 @@ export default function App() {
 
     {page === 'gallery' && <main className="home">
       <section className="home-shopping" aria-label="Магазины">
-        <h1 className="visually-hidden" ref={heading} tabIndex={-1}>Магазины галереи</h1>
+        <h1 className="home-title" ref={heading} tabIndex={-1}>Учи английский за покупками</h1>
         <ShopCarousel index={route.shop} onChange={changeShop} />
         <div className="home-shop-action">
           <button className="primary" onClick={begin}>{resumable ? 'Продолжить покупки' : 'Начать покупки'}<Icon name="arrow" /></button>
